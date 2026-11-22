@@ -39,7 +39,12 @@ const AF={s:1.2,m:1.45,a:1.7};let S,tab=0,showSet=false,ed=null,busy=false;
 const def=()=>({sub:'Per te, con amore ♥',prof:[{id:'u1',name:'Lei',a:28,sex:'F',w:60,h:165,act:'m',goal:'t',ex:[],free:'',on:true},{id:'u2',name:'Io',a:30,sex:'M',w:78,h:180,act:'m',goal:'m',ex:[],free:'',on:true}],pres:{},rec:[],cfg:{bud:70,store:0,n:2,pan:[],key:''},plan:null,chk:{}});
 try{S=JSON.parse(localStorage.getItem('sc3'))}catch(e){}
 if(!S){try{const o=JSON.parse(localStorage.getItem('sc2')||localStorage.getItem('sc1'));if(o){S=o;S.rec=[];S.cf=[];S.plan=null;S.chk={}}}catch(e){}}
-if(!S)S=def();S.cfg.pan=S.cfg.pan||[];S.cf=S.cf||[];S.rec=S.rec||[];S.cf.forEach(f=>F[f.id]=f);
+if(!S)S=def();
+// Ripara dati salvati da versioni precedenti: una struttura plan non valida non deve bloccare Spesa/Menu.
+S.cfg=S.cfg||def().cfg;S.prof=Array.isArray(S.prof)?S.prof:def().prof;S.pres=S.pres&&typeof S.pres==='object'?S.pres:{};S.cfg.pan=Array.isArray(S.cfg.pan)?S.cfg.pan:[];S.cf=Array.isArray(S.cf)?S.cf:[];S.rec=Array.isArray(S.rec)?S.rec:[];S.chk=S.chk&&typeof S.chk==='object'?S.chk:{};
+if(S.plan!==null&&S.plan!==undefined&&!Array.isArray(S.plan))S.plan=null;
+if(Array.isArray(S.plan)&&S.plan.some(x=>x&&(!x.r||!Array.isArray(x.pp))))S.plan=null;
+S.cf.forEach(f=>{if(f&&f.id)F[f.id]=f});try{localStorage.setItem('sc3',JSON.stringify(S))}catch(e){}
 const save=()=>{try{localStorage.setItem('sc3',JSON.stringify(S))}catch(e){}};
 const $=s=>document.querySelector(s),E=s=>String(s).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;');
 const nm=id=>(S.prof.find(p=>p.id==id)||{}).name||'?';
@@ -116,12 +121,12 @@ function RF(id){const u=S.rec.filter(r=>parse(r.ing).some(i=>i.id==id));if(u.len
 delete F[id];S.cf=S.cf.filter(x=>x.id!=id);if(S.plan&&S.plan.some(x=>x&&parse(x.r.ing).some(i=>i.id==id)))S.plan=null;save();toast('Alimento eliminato');R()}
 async function CH(i){const cur=S.plan[i]&&S.plan[i].r;if(S.cfg.key){try{toast('Chiedo un nuovo piatto all’AI…');const ms=await aiMeals([i],'Deve essere diverso da “'+(cur?cur.n:'')+'” e con fonte proteica diversa da: '+([gAt(i-1),gAt(i+1)].filter(Boolean).join(', ')||'nessun vincolo')+'.'),r=ms[0]&&ms[0].r;if(r&&allowed(r,present(i))&&grp(r)!=gAt(i-1)&&grp(r)!=gAt(i+1)){S.plan[i]=build(r,present(i),i&1);save();R();return}}catch(e){toast('AI: '+(LE||e.message||e)+' · uso il motore locale')}}
 const r=pick(i,cur&&cur.id);if(r){S.plan[i]=build(r,present(i),i&1);save();R()}else toast('Nessuna alternativa compatibile con le esclusioni.')}
-function shop(pl=S.plan){const t={};(pl||[]).forEach(s=>s&&s.pp.forEach(p=>p.items.forEach(([id,g])=>t[id]=(t[id]||0)+g)));const mul=[.85,1][S.cfg.store];
-return Object.entries(t).map(([id,g])=>{const f=F[id],pk=F[id].pk||100,packs=Math.ceil(g/pk-1e-9),pan=S.cfg.pan.some(k=>mt(k,f));return{id,f,g,pk,packs,pan,pr:pan?0:packs*pk/1000*f.pr*mul}})}
+function shop(pl=S.plan){const t={};(Array.isArray(pl)?pl:[]).forEach(s=>{if(!s||!Array.isArray(s.pp))return;s.pp.forEach(p=>{if(!p||!Array.isArray(p.items))return;p.items.forEach(([id,g])=>{if(F[id]&&Number.isFinite(+g)&&+g>0)t[id]=(t[id]||0)+(+g)})})});const mul=[.85,1][S.cfg.store]||1;
+return Object.entries(t).map(([id,g])=>{const f=F[id],pk=f.pk||100,packs=Math.ceil(g/pk-1e-9),pan=S.cfg.pan.some(k=>mt(k,f));return{id,f,g,pk,packs,pan,pr:pan?0:packs*pk/1000*f.pr*mul}})}
 const cost=pl=>shop(pl).reduce((a,x)=>a+x.pr,0);
 const qty=x=>x.pk<=100?(x.packs*x.pk)+' g sfusi':x.packs+' × '+(x.pk>=1000?x.pk/1000+' kg':x.pk+' g')+(x.id=='uova'?' (6 uova)':'');
 // ---------- HANDLER ----------
-function Tb(i){tab=i;R();window.scrollTo(0,0)}
+function Tb(i){tab=i;try{R();window.scrollTo(0,0)}catch(e){console.error('Errore apertura scheda',i,e);toast('Errore apertura scheda: '+(e&&e.message?e.message:'dati non validi')+'. Ricarica la pagina.')}}
 function U(id,k,v){S.prof.find(p=>p.id==id)[k]=v;save();R()}
 function X(id,t){const p=S.prof.find(p=>p.id==id);p.ex=p.ex.includes(t)?p.ex.filter(x=>x!=t):[...p.ex,t];save();R()}
 function AP(){S.prof.push({id:'u'+Date.now(),name:'Nuova persona',a:30,sex:'F',w:65,h:170,act:'m',goal:'m',ex:[],free:'',on:true});save();R()}
@@ -171,7 +176,7 @@ return h+Object.keys(CAT).map(k=>{const l=items.filter(x=>x.f.cat==k).sort((a,b)
 function nutUI(){return `<div class="card mt-2"><div class="font-bold mb-2">Riepilogo nutrizionale reale</div><div class="mu text-xs mb-2">Somma degli ingredienti in lista sui pasti pianificati di ciascuno, rispetto alla quota di fabbisogno coperta da quei pasti.</div>`+S.prof.filter(p=>p.on).map(p=>{const c=calc(p),t={k:0,p:0,c:0,f:0,fi:0},g={k:0,p:0,c:0,f:0,fi:0};
 S.plan.forEach((s,i)=>{const q=s&&s.pp.find(x=>x.pid==p.id);if(!q)return;const n=nutr(q.items),sh=MS[i&1];for(const k in n)t[k]+=n[k];g.k+=c.k*sh;g.p+=c.pr*sh;g.c+=c.ch*sh;g.f+=c.fa*sh;g.fi+=c.fi*sh});
 return `<div class="mb-3"><div class="font-semibold text-sm">${E(p.name)}</div>`+[['Kcal','k'],['Proteine','p'],['Carboidrati','c'],['Grassi','f'],['Fibre','fi']].map(([l,k])=>{const pc=g[k]?Math.round(t[k]/g[k]*100):0;return `<div class="text-xs flex justify-between mt-1"><span>${l}</span><span class="mu">${Math.round(t[k])} / ${Math.round(g[k])} · ${pc}%</span></div><div class="bar"><i style="width:${Math.min(100,pc)}%"></i></div>`}).join('')+'</div>'}).join('')+'</div>'}
-function tM(){if(!S.plan)return `<div class="card text-center mu">Imposta presenze e budget, poi tocca “Genera piano” nella scheda Spesa.</div>`;
+function tM(){if(!Array.isArray(S.plan)||!S.plan.length)return `<div class="card text-center mu">Imposta presenze e budget, poi tocca “Genera piano” nella scheda Spesa.</div>`;
 return DL.map((dn,d)=>`<div class="card mb-3"><div class="font-bold mb-1">${dn}</div>`+[0,1].map(m=>{const i=d*2+m,s=S.plan[i];if(!s)return `<div class="text-sm mu py-1 border-t" style="border-color:var(--br)">${M[m]}: nessuno presente o nessun piatto compatibile</div>`;
 const ids=[...new Set(parse(s.r.ing).map(x=>x.id))],mine=S.rec.some(x=>x.id==s.r.id||x.n==s.r.n);
 return `<div class="border-t py-2" style="border-color:var(--br)"><div class="flex justify-between items-start gap-2"><div><span class="mu text-xs">${M[m]} · ${s.r.t} min · ${grp(s.r)}</span><div class="font-semibold">${E(s.r.n)} ${mine?'<span class="chip on">★ Dal tuo ricettario</span>':''}</div></div><div class="flex flex-col gap-1 shrink-0"><button class="btn2" onclick="CH(${i})">Cambia piatto</button>${mine?'':`<button class="btn2" onclick="SV(${i})">★ Salva ricetta</button>`}</div></div>
