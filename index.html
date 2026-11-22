@@ -89,18 +89,50 @@ const FS='Per ogni ingrediente NON presente nell’elenco aggiungi in "foods" un
 const foodPrompt=ns=>'Alimenti venduti nei supermercati italiani: '+ns.join(', ')+'. Usa come "n" esattamente il nome dato. Rispondi SOLO con JSON {"foods":[...]}. Ogni elemento: '+FS.replace('Per ogni ingrediente NON presente nell’elenco aggiungi in "foods" un oggetto','');
 async function aiMeals(idx,note){const known=Object.values(F).map(f=>f.n).join(', ');
 const sl=idx.map(i=>'slot '+i+' ('+DL[i>>1]+' '+M[i&1]+'): '+present(i).map(p=>p.name+' [esclude: '+([...p.ex,...p.fl].join('/')||'niente')+'; target '+Math.round(calc(p).k*MS[i&1])+' kcal]').join('; ')).join(' | ');
-const o=await gem('Sei uno chef e nutrizionista italiano. Crea una ricetta per ciascuno di questi pasti: '+sl+'. Regole: dieta mediterranea sana; ingredienti reali acquistabili in un supermercato italiano (qualsiasi alimento va bene); grammature crude per 1 persona adulta; elenca per primo l’ingrediente proteico principale; mai usare come ingrediente normale un cibo escluso da uno dei presenti (se è escluso solo da alcuni, mettilo con "opt":true così verrà omesso per loro e spiegalo nei passi); non la stessa fonte proteica (carne, pesce, uova, legumi, latticini) in due slot consecutivi; nella settimana ruota legumi 3-4 volte, pesce 2-3, carne bianca 2-3, uova 2, almeno 4-5 verdure e vari cereali; riusa ingredienti tra ricette per evitare sprechi; solo cibo, niente prodotti non alimentari; budget settimanale '+S.cfg.bud+' € (supermercato '+['discount','standard'][S.cfg.store]+'). Già in dispensa: '+(S.cfg.pan.join(', ')||'nulla')+'. '+(note||'')+' Elenco ingredienti già scelti dall’utente (preferiscili e usa questi nomi esatti quando possibile; se l’elenco è vuoto scegli liberamente): '+known+'. '+FS+' Rispondi SOLO con JSON: {"meals":[{"slot":numero,"n":"nome piatto","t":minuti,"st":["passo 1","passo 2","passo 3","passo 4"],"ing":[{"n":"nome","g":grammi,"opt":false}]}],"foods":[]}');
+const o=await gem('Sei uno chef e nutrizionista italiano. Crea ESATTAMENTE una ricetta completa per OGNI slot elencato: '+sl+'. È OBBLIGATORIO restituire tutti gli slot, ciascuno una sola volta; NON saltare mai un pranzo o una cena per risparmiare. Il budget è un tetto massimo, NON un obiettivo e NON autorizza a eliminare pasti. Regole: dieta mediterranea sana; ingredienti reali acquistabili in un supermercato italiano (qualsiasi alimento va bene); grammature crude per 1 persona adulta; elenca per primo l’ingrediente proteico principale; mai usare come ingrediente normale un cibo escluso da uno dei presenti (se è escluso solo da alcuni, mettilo con "opt":true così verrà omesso per loro e spiegalo nei passi); non la stessa fonte proteica (carne, pesce, uova, legumi, latticini) in due slot consecutivi; nella settimana ruota legumi 3-4 volte, pesce 2-3, carne bianca 2-3, uova 2, almeno 4-5 verdure e vari cereali; riusa ingredienti tra ricette per evitare sprechi; solo cibo, niente prodotti non alimentari; budget settimanale '+S.cfg.bud+' € (supermercato '+['discount','standard'][S.cfg.store]+'). Già in dispensa: '+(S.cfg.pan.join(', ')||'nulla')+'. '+(note||'')+' Elenco ingredienti già scelti dall’utente (preferiscili e usa questi nomi esatti quando possibile; se l’elenco è vuoto scegli liberamente): '+known+'. '+FS+' Rispondi SOLO con JSON: {"meals":[{"slot":numero,"n":"nome piatto","t":minuti,"st":["passo 1","passo 2","passo 3","passo 4"],"ing":[{"n":"nome","g":grammi,"opt":false}]}],"foods":[]}');
 (o.foods||[]).forEach(d=>d&&d.n&&regFood(d.n,d));
 return(o.meals||[]).map(m=>{const ing=[];(m.ing||[]).forEach(x=>{const id=x&&x.n&&regFood(x.n);if(id&&+x.g>0)ing.push((x.opt?'*':'')+id+':'+Math.round(x.g))});return ing.length?{slot:+m.slot,r:{id:'a'+Date.now()+'_'+m.slot,n:String(m.n),t:+m.t||25,tags:[],ing:ing.join(','),st:(m.st||[]).map(String)}}:null}).filter(Boolean)}
 // Piano completo con Gemini: fino a 3 tentativi per rientrare nel budget
-async function GA(){const L=[];for(let i=0;i<14;i++)if(present(i).length)L.push(i);if(!L.length)throw new Error('nessuno presente');
-const base=Array(14).fill(null);S.plan=base;const ls=[...L].sort(()=>Math.random()-.5);
-for(const r of[...S.rec].sort(()=>Math.random()-.5).slice(0,S.cfg.n)){const i=ls.find(j=>!base[j]&&allowed(r,present(j)));if(i!==undefined)base[i]=build(r,present(i),i&1)}
-const rest=L.filter(i=>!base[i]);if(!rest.length)return true;let best=null,bc=1e9,note='';
-for(let a=0;a<2;a++){bmsg='L’AI sta scrivendo le ricette (tentativo '+(a+1)+'/2, può volerci un minuto)…';R();const ms=await aiMeals(rest,note);S.plan=base.slice();
-for(const i of rest){const m=ms.find(x=>x.slot==i),r=m&&m.r,ok=r&&allowed(r,present(i))&&grp(r)!=gAt(i-1)&&grp(r)!=gAt(i+1),u=ok?r:pick(i);if(u)S.plan[i]=build(u,present(i),i&1)}
-const c=cost(S.plan);if(c<bc){bc=c;best=S.plan}if(c<=S.cfg.bud)break;note='Il tentativo precedente costava circa '+c.toFixed(0)+' € contro un budget di '+S.cfg.bud+' €: usa ingredienti più economici e stagionali, più legumi, uova e cereali, e riusa gli ingredienti.'}
-S.plan=best;if(bc>S.cfg.bud)S.warn='L’AI non è riuscita a stare nel budget: stima '+bc.toFixed(2)+' € (budget '+S.cfg.bud+' €). Alza il budget o riduci i pasti.';return true}
+async function GA(){
+const L=[];for(let i=0;i<14;i++)if(present(i).length)L.push(i);
+if(!L.length)throw new Error('nessuno presente');
+const base=Array(14).fill(null),ls=[...L].sort(()=>Math.random()-.5);
+for(const r of [...S.rec].sort(()=>Math.random()-.5).slice(0,S.cfg.n)){
+ const i=ls.find(j=>!base[j]&&allowed(r,present(j)));
+ if(i!==undefined)base[i]=build(r,present(i),i&1);
+}
+const rest=L.filter(i=>!base[i]);
+if(!rest.length){S.plan=base;return true}
+let best=null,bc=1e99,note='';
+for(let a=0;a<3;a++){
+ bmsg='L’AI sta completando tutti i pasti (tentativo '+(a+1)+'/3)…';R();
+ const ms=await aiMeals(rest,note);
+ S.plan=base.slice();
+ const candidates=ms.map(x=>x&&x.r).filter(Boolean);
+ for(const i of rest){
+  const m=ms.find(x=>x.slot===i),wanted=m&&m.r;
+  let chosen=wanted&&allowed(wanted,present(i))&&grp(wanted)!==gAt(i-1)&&grp(wanted)!==gAt(i+1)?wanted:null;
+  if(!chosen)chosen=pick(i);
+  if(!chosen)chosen=candidates.find(r=>allowed(r,present(i))&&grp(r)!==gAt(i-1)&&grp(r)!==gAt(i+1));
+  if(!chosen)chosen=candidates.find(r=>allowed(r,present(i)));
+  if(!chosen)chosen=S.rec.find(r=>allowed(r,present(i)));
+  if(chosen)S.plan[i]=build(chosen,present(i),i&1);
+ }
+ // Un piano incompleto non è mai considerato valido: il budget è un tetto di spesa,
+ // non un motivo per cancellare o saltare un pasto richiesto dalle presenze.
+ const missing=L.filter(i=>!S.plan[i]);
+ if(missing.length){note='Nel tentativo precedente mancavano i pasti '+missing.map(i=>DL[i>>1]+' '+M[i&1]).join(', ')+'. Devi creare OBBLIGATORIAMENTE una ricetta completa per ciascuno slot indicato. Non saltare pasti per nessun motivo. Il budget è un tetto massimo, non un obiettivo da raggiungere.';continue}
+ const c=cost(S.plan);
+ if(c<bc){bc=c;best=S.plan.map(x=>x)}
+ if(c<=S.cfg.bud)break;
+ note='Il piano deve comunque contenere TUTTI i '+L.length+' pasti richiesti. Il budget di '+S.cfg.bud+' € è solo un tetto massimo: non eliminare, saltare o ridurre il numero dei pasti per rientrare. Cerca ingredienti economici e stagionali, ma crea una ricetta completa per ogni slot.';
+}
+if(!best)throw new Error('L’AI non ha restituito un piano completo per tutti i pasti. Riprova: nessun pasto è stato eliminato.');
+S.plan=best;
+if(bc>S.cfg.bud)S.warn='Tutti i '+L.length+' pasti sono stati pianificati. La spesa stimata è '+bc.toFixed(2)+' € e supera il tetto di '+S.cfg.bud+' €: prova ingredienti più economici oppure aumenta il budget. Nessun pasto è stato saltato.';
+else if(bc<S.cfg.bud*.65)S.warn='Sono presenti tutti i '+L.length+' pasti. La spesa stimata è '+bc.toFixed(2)+' € su un tetto di '+S.cfg.bud+' €: il budget è un massimo, non è necessario spenderlo tutto.';
+return true
+}
 async function autoFoods(){if(!S.cfg.key)return;const un=[];$('#ri').value.split('\n').forEach(l=>{const m=l.trim().match(/^(\*?)\s*(.+?)\s+(\d+(?:[.,]\d+)?)\s*g?$/i);if(m&&!Object.values(F).some(f=>f.n.toLowerCase().includes(m[2].toLowerCase())))un.push(m[2])});if(!un.length)return;try{toast('Cerco valori e prezzi con l’AI…');const o=await gem(foodPrompt(un));(o.foods||[]).forEach(d=>d&&d.n&&regFood(d.n,d))}catch(e){toast('AI: '+(LE||e.message||e))}}
 async function FI(){const n=$('#fn').value.trim();if(!n)return toast('Scrivi prima il nome');try{toast('Chiedo all’AI…');const o=await gem(foodPrompt([n])),d=(o.foods||[])[0];if(!d)throw new Error('vuoto');$('#fc').value=CAT[d.cat]?d.cat:'D';$('#fp').value=d.pr;$('#fk').value=d.pk;$('#ft').value=(d.t||[]).join(', ');$('#fkc').value=d.k;$('#fpr').value=d.p;$('#fch').value=d.c;$('#fgr').value=d.f;$('#ffi').value=d.fi}catch(e){toast('AI: '+(LE||e.message||e))}}
 function SF(){const n=$('#fn').value.trim();if(!n||$('#fp').value===''||$('#fkc').value==='')return toast('Servono almeno nome, prezzo €/kg e kcal');regFood(n,{cat:$('#fc').value,pr:$('#fp').value,pk:$('#fk').value,t:$('#ft').value,k:$('#fkc').value,p:$('#fpr').value,c:$('#fch').value,f:$('#fgr').value,fi:$('#ffi').value});toast('Alimento salvato');R()}
@@ -113,9 +145,9 @@ let k=0;
 for(const i of L){if(S.plan[i])continue;const a=ai&&Array.isArray(ai)&&SYS.find(r=>r.id===ai[k++]);put(i,a&&allowed(a,present(i))&&grp(a)!=gAt(i-1)&&grp(a)!=gAt(i+1)?a:pick(i))}
 }
 // Genera piu' piani con costo crescente di attenzione al prezzo finche' rientra nel budget
-async function G(){if(!S.cfg.key&&!S.rec.length){S.warn='Il ricettario è vuoto: aggiungi qualche ricetta nella scheda Ricette oppure inserisci la chiave AI in ⚙.';R();return}busy=true;S.warn='';R();await new Promise(r=>setTimeout(r,30));try{if(S.cfg.key&&await GA()){busy=false;save();R();return}}catch(e){S.warn='L’AI non è raggiungibile ('+(LE||e.message||e)+'): ho usato il motore locale. ';console.warn(e)}const ai=null;let best=null,bc=1e9;
-for(let a=0;a<30;a++){CW=a/3;await G1(a==0?ai:null);const c=cost(S.plan);if(c<bc){bc=c;best=S.plan}if(c<=S.cfg.bud)break}
-CW=0;S.plan=best;if(bc>S.cfg.bud)S.warn=(S.warn||'')+'Con queste presenze e questi gusti il minimo ottenibile è circa '+bc.toFixed(2)+' € (budget '+S.cfg.bud+' €). Alza il budget, riduci i pasti o aggiungi cibi in dispensa.';busy=false;save();R()}
+async function G(){if(!S.cfg.key&&!S.rec.length){S.warn='Il ricettario è vuoto: aggiungi qualche ricetta nella scheda Ricette oppure inserisci la chiave AI in ⚙.';R();return}busy=true;S.warn='';R();await new Promise(r=>setTimeout(r,30));try{if(S.cfg.key&&await GA()){busy=false;save();R();return}}catch(e){S.warn='L’AI non è raggiungibile ('+(LE||e.message||e)+'): ho usato il motore locale. ';console.warn(e)}const ai=null,required=Array.from({length:14},(_,i)=>i).filter(i=>present(i).length);let best=null,bc=1e99;
+for(let a=0;a<30;a++){CW=a/3;await G1(a==0?ai:null);if(required.some(i=>!S.plan[i]))continue;const c=cost(S.plan);if(c<bc){bc=c;best=S.plan.map(x=>x)}if(c<=S.cfg.bud)break}
+CW=0;if(best){S.plan=best;if(bc>S.cfg.bud)S.warn=(S.warn||'')+'Tutti i pasti sono presenti, ma la spesa stimata è '+bc.toFixed(2)+' € e supera il tetto di '+S.cfg.bud+' €. Nessun pasto è stato saltato.'}else{S.plan=Array(14).fill(null);S.warn=(S.warn||'')+'Non sono riuscito a creare un piano completo. Non ho salvato un menu con pasti mancanti: controlla le presenze o riprova.'}busy=false;save();R()}
 function SV(i){const s=S.plan[i];if(!s)return;if(S.rec.some(x=>x.n==s.r.n))return toast('È già nel ricettario');S.rec.push({id:'r'+Date.now(),n:s.r.n,t:s.r.t,tags:['Dall’AI'],ing:s.r.ing,st:s.r.st});save();toast('Ricetta salvata nel ricettario ★');R()}
 function RF(id){const u=S.rec.filter(r=>parse(r.ing).some(i=>i.id==id));if(u.length)return toast('Non posso eliminarlo: è usato in '+u.map(r=>r.n).join(', ')+'. Modifica o elimina prima quelle ricette.');
 delete F[id];S.cf=S.cf.filter(x=>x.id!=id);if(S.plan&&S.plan.some(x=>x&&parse(x.r.ing).some(i=>i.id==id)))S.plan=null;save();toast('Alimento eliminato');R()}
@@ -165,7 +197,7 @@ function tR(){let f='';if(ed){const r=ed=='new'?{n:'',t:20,tags:[],ing:'',st:[]}
 <label class="block mt-2">Procedimento (una riga per step)<textarea id="rs" rows="4" class="inp">${E(r.st.join('\n'))}</textarea></label><div class="flex gap-2 mt-3"><button class="btn" onclick="SR()">Salva</button><button class="btn2" onclick="ED(null)">Annulla</button></div></div>`}
 return `<button class="btn w-full mb-3" onclick="ED('new')">+ Nuova ricetta</button>`+f+foodUI()+(S.rec.length?'':'<div class="card mu text-center text-sm">Nessuna ricetta ancora. Aggiungine una o salva quelle proposte dall’AI dal Menù (★).</div>')+S.rec.map(r=>`<div class="card mb-3"><div class="flex justify-between gap-2"><b>${E(r.n)}</b><span class="mu text-sm shrink-0">${r.t} min</span></div><div class="my-1">${r.tags.map(t=>`<span class="chip on mr-1">${E(t)}</span>`).join('')}</div><div class="text-sm mu">${parse(r.ing).map(i=>F[i.id].n+' '+i.g+'g'+(i.o?' (opz.)':'')).join(', ')}</div><details class="text-sm mt-1"><summary>Procedimento</summary><ol class="list-decimal pl-5">${r.st.map(s=>`<li>${E(s)}</li>`).join('')}</ol></details><div class="flex gap-2 mt-2"><button class="btn2" onclick="ED('${r.id}')">Modifica</button><button class="btn2" onclick="DR('${r.id}')">Elimina</button></div></div>`).join('')}
 function tS(){const c=S.cfg,all=shop(),items=all.filter(x=>!x.pan),tot=items.reduce((a,x)=>a+x.pr,0),pc=Math.min(100,tot/c.bud*100);
-let h=`<div class="card mb-3 text-sm"><div class="font-bold mb-2">Configura la settimana</div><label>Budget massimo: <b>${c.bud} €</b><input type="range" min="20" max="250" step="5" value="${c.bud}" class="w-full" onchange="C('bud',+this.value)"></label>
+let h=`<div class="card mb-3 text-sm"><div class="font-bold mb-2">Configura la settimana</div><label>Budget massimo (tetto, non obiettivo da spendere): <b>${c.bud} €</b><input type="range" min="20" max="250" step="5" value="${c.bud}" class="w-full" onchange="C('bud',+this.value)"></label>
 <label class="block mt-2">Supermercato<select class="inp" onchange="C('store',+this.value)">${opt([[0,'Discount (Lidl, Eurospin) ×0,85'],[1,'Standard (Esselunga, Coop, Conad, Carrefour) ×1']],c.store)}</select></label>
 <div class="mt-2 font-semibold">Già in dispensa (esclusi da lista e budget)</div><div class="flex gap-2 mt-1"><input id="pi" class="inp" placeholder="es. olio, pasta, riso…" onkeydown="if(event.key==='Enter')PA()"><button class="btn" onclick="PA()">Aggiungi</button></div><div class="flex flex-wrap gap-1 mt-2">${c.pan.map((k,i)=>`<button class="chip on" onclick="PR(${i})">${E(k)} ✕</button>`).join('')||'<span class="mu text-xs">Nessun cibo in dispensa</span>'}</div>
 <label class="block mt-2">Ricette dal tuo ricettario: <b>${c.n}</b><input type="range" min="0" max="5" value="${c.n}" class="w-full" onchange="C('n',+this.value)"></label>
